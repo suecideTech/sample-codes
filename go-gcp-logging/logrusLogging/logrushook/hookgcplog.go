@@ -11,10 +11,9 @@ import (
 
 // HookGCPLog is a hook that writes logs of specified LogLevels to specified Writer
 type HookGCPLog struct {
-	Writer        io.Writer
-	LogLevels     []log.Level
-	ErrorReport   bool
-	InserBigQuery bool
+	Writer      io.Writer
+	LogLevels   []log.Level
+	ErrorReport bool
 }
 
 // Fire will be called when some logging function is called with current hook
@@ -26,9 +25,6 @@ func (hook *HookGCPLog) Fire(entry *log.Entry) error {
 	}
 	if hook.ErrorReport == true {
 		line, _ = insertErrorReportMark(line)
-	}
-	if hook.InserBigQuery == true {
-		line, _ = inserBigQueryMark(line)
 	}
 	_, err = hook.Writer.Write(line)
 	return err
@@ -49,26 +45,7 @@ func insertErrorReportMark(line []byte) ([]byte, error) {
 	jsonKeyValue, ok := jsonData.(map[string]interface{})
 	if ok == true {
 		jsonKeyValue["@type"] = "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent"
-		jsonKeyValue["severity"] = "fatal" // panicをfatalに置き換える
-	}
-	blob, err := json.Marshal(jsonData)
-	if err != nil {
-		return line, err
-	}
-	blob = append(blob, '\n') // jsonUnmarshalで改行が取れてしまうため再度付与
-	return blob, nil
-}
-
-// inserBigQueryMark BigQueryへ格納するログ用の識別子を付与する
-func inserBigQueryMark(line []byte) ([]byte, error) {
-	var jsonData interface{}
-	err := json.Unmarshal([]byte(line), &jsonData)
-	if err != nil {
-		return line, err
-	}
-	jsonKeyValue, ok := jsonData.(map[string]interface{})
-	if ok == true {
-		jsonKeyValue["@insert"] = "true"
+		jsonKeyValue["severity"] = "fatal" // Error Reportingへ挿入するseverityはfatal固定にする
 	}
 	blob, err := json.Marshal(jsonData)
 	if err != nil {

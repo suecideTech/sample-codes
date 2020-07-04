@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"time"
 
-	"cloudrunlog/echomiddleware"
-	"cloudrunlog/logrushook"
+	"logrusLogging/echomiddleware"
+	"logrusLogging/logrushook"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -33,7 +33,7 @@ func setupLogrusForGCP() {
 		},
 		TimestampFormat: time.RFC3339Nano,
 	})
-	// Hookでログ出力する
+	// Hookでログ出力するためLogrus標準の出力は捨てる
 	log.SetOutput(ioutil.Discard)
 	// 標準出力：Info
 	log.AddHook(&logrushook.HookGCPLog{
@@ -41,7 +41,6 @@ func setupLogrusForGCP() {
 		LogLevels: []log.Level{
 			log.InfoLevel,
 		},
-		InserBigQuery: true,
 	})
 	// 標準エラー出力：Error, Warn, Debug
 	log.AddHook(&logrushook.HookGCPLog{
@@ -63,7 +62,7 @@ func setupLogrusForGCP() {
 	})
 }
 
-// httpRequest EchoLogger用ログフォーマット1
+// httpRequest GCPのhttpRequestに合わせた定義
 type httpRequest struct {
 	Latency       string `json:"latency"`
 	Protocol      string `json:"protocol"`
@@ -77,12 +76,12 @@ type httpRequest struct {
 	UserAgent     string `json:"userAgent"`
 }
 
-// echoLogging EchoLogger用ログフォーマット2
+// echoLogging EchoLogger用ログフォーマット(GCPのLogEntryに合わせた定義)
 type echoLogging struct {
 	Timestamp   string      `json:"time"`
 	HTTPRequest httpRequest `json:"httpRequest"`
 	Message     string      `json:"message"`
-	// severityはCloud LoggingがhttpRequest.statusを参照して自動付与
+	// severityはCloud LoggingがhttpRequest.statusを参照して自動付与してくれる
 }
 
 // setupEchoLoggerForGCP OperationsLogging用にEchoLoggerを初期化
@@ -107,13 +106,13 @@ func setupEchoLoggerForGCP() string {
 		message}
 	jsonBytes, _ := json.Marshal(jsonPayload)
 
-	return string(jsonBytes) + "\n" // 改行がないとfluentdが検知出来ない.
+	return string(jsonBytes) + "\n"
 }
 
 func main() {
 	// Setup Logrus.
 	setupLogrusForGCP()
-	// ※goroutineのエントリーポイントにも以下deferを登録すること！
+
 	defer func() {
 		if x := recover(); x != nil {
 			stack := make([]byte, panicStackSize)
@@ -148,6 +147,7 @@ func main() {
 
 	e.GET("/fatal", func(c echo.Context) error {
 		log.Fatalf("%s: Severity Fatal.", c.Request().Method)
+		// Fatalの場合ここでos.Exit(1)
 		return c.String(http.StatusOK, "Hello, World!\n")
 	})
 
@@ -156,9 +156,13 @@ func main() {
 		return c.String(http.StatusOK, "Hello, World!\n")
 	})
 
-	var p *interface{}
-	*p = 0
+	//nilPointerTesting()
 
 	log.Infof("Echo Initialize Complete! ListenPort(80)")
 	log.Fatalln(e.Start(":80"))
+}
+
+func nilPointerTesting() {
+	var p *interface{}
+	*p = 0
 }

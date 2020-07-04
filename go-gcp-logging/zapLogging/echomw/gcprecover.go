@@ -1,14 +1,12 @@
-package echomiddleware
+package echomw
 
 import (
 	"fmt"
-	"os"
 	"runtime"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 // 流用元：https://github.com/labstack/echo/blob/master/middleware/recover.go
@@ -46,13 +44,13 @@ var (
 
 // GCPRecover returns a middleware which recovers from panics anywhere in the chain
 // and handles the control to the centralized HTTPErrorHandler.
-func GCPRecover() echo.MiddlewareFunc {
-	return GCPRecoverWithConfig(DefaultRecoverConfig)
+func GCPRecover(log *zap.Logger) echo.MiddlewareFunc {
+	return GCPRecoverWithConfig(log, DefaultRecoverConfig)
 }
 
 // GCPRecoverWithConfig returns a Recover middleware with config.
 // See: `Recover()`.
-func GCPRecoverWithConfig(config RecoverConfig) echo.MiddlewareFunc {
+func GCPRecoverWithConfig(log *zap.Logger, config RecoverConfig) echo.MiddlewareFunc {
 	// Defaults
 	if config.Skipper == nil {
 		config.Skipper = DefaultRecoverConfig.Skipper
@@ -76,25 +74,10 @@ func GCPRecoverWithConfig(config RecoverConfig) echo.MiddlewareFunc {
 					stack := make([]byte, config.StackSize)
 					length := runtime.Stack(stack, !config.DisableStackAll)
 					if !config.DisablePrintStack {
-						// Logrusを用いてログ出力する
-						log := logrus.New()
-						log.Level = logrus.DebugLevel
-						log.Formatter = &logrus.JSONFormatter{
-							FieldMap: logrus.FieldMap{
-								logrus.FieldKeyTime:  "time",
-								logrus.FieldKeyLevel: "severity",
-								logrus.FieldKeyMsg:   "message",
-							},
-							TimestampFormat: time.RFC3339Nano,
-						}
-						log.Out = os.Stderr
-						log.WithFields(logrus.Fields{
-							"@type": "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
-						}).Errorf("panic(%v): %s", err, stack[:length])
-						// @todo: Fatal, Panicの場合exit()が呼ばれるためErrorにしている
-						//      : 一度文字列にしてFatalに置換するか、
-						//      : logrus.FieldKeyLevel: "dump"とし、WithFields(logrus.Fields{ "severity": "fatal"...
-						//      : などで対策したほうがいいかも...
+						// Zapを用いてログ出力する
+						log.Error(
+							err.Error(),
+							zap.ByteString("ErrorStack", stack[:length]))
 					}
 					c.Error(err)
 				}
